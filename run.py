@@ -2,6 +2,7 @@
 
     python run.py                    # live Deribit data (falls back to data/ cache)
     python run.py --mode synthetic   # offline, seeded simulation
+    python run.py --mode cache       # reproduce the 2026-09-30 snapshot in docs/ (no network)
 """
 import argparse
 import sys
@@ -15,12 +16,14 @@ from optrisk import backtest, data, portfolio, report, risk, vol  # noqa: E402
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["live", "synthetic"], default="live")
+    ap.add_argument("--mode", choices=["live", "synthetic", "cache"], default="live")
+    ap.add_argument("--data-dir", type=Path, default=Path(__file__).parent / "docs" / "data_2026-09-30",
+                    help="snapshot folder read in --mode cache (spot.csv, dvol.csv, chain.csv)")
     ap.add_argument("--days", type=int, default=1500)
     ap.add_argument("--size", type=float, default=10.0, help="contracts per option leg")
     args = ap.parse_args()
 
-    spot, dvol, chain, source = data.load(args.mode, args.days)
+    spot, dvol, chain, source = data.load(args.mode, args.days, data_dir=args.data_dir)
     print(f"[data] {source}")
     pf, meta = portfolio.build_default(chain, size=args.size)
     shocks = risk.joint_shocks(spot, dvol)

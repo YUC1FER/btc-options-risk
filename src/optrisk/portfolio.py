@@ -82,22 +82,30 @@ class Portfolio:
         return total
 
     # ------------------------------------------------------------------- greeks
+    CASH_GAMMA = "cash gamma (USD per 1% move)"
+    GAMMA_PNL = "gamma P&L 1% (USD)"
+
     def greeks(self) -> pd.DataFrame:
+        """Greeks per leg in USD. Gamma is quoted as cash gamma and 1% gamma P&L because
+        per-dollar gamma (~1e-5 per BTC contract) rounds to zero in a table."""
         rows = []
         for p in self.positions:
             if p.kind == "future":
                 rows.append({"position": p.name, "qty": p.qty, "delta": p.qty,
-                             "gamma": 0.0, "vega": 0.0, "theta": 0.0, "value": 0.0})
+                             self.CASH_GAMMA: 0.0, self.GAMMA_PNL: 0.0,
+                             "vega": 0.0, "theta": 0.0, "value": 0.0})
                 continue
             args = (self.F0, p.K, p.T, p.iv)
             rows.append({"position": p.name, "qty": p.qty,
                          "delta": p.qty * float(bs.delta(*args, p.cp)),
-                         "gamma": p.qty * float(bs.gamma(*args)),
+                         self.CASH_GAMMA: p.qty * float(bs.cash_gamma(*args)),
+                         self.GAMMA_PNL: p.qty * float(bs.gamma_pnl_1pct(*args)),
                          "vega": p.qty * float(bs.vega(*args)),
                          "theta": p.qty * float(bs.theta(*args)),
                          "value": p.qty * float(bs.price(*args, p.cp))})
         df = pd.DataFrame(rows)
-        df.loc[len(df)] = ["TOTAL", np.nan, *df[["delta", "gamma", "vega", "theta", "value"]].sum()]
+        num = ["delta", self.CASH_GAMMA, self.GAMMA_PNL, "vega", "theta", "value"]
+        df.loc[len(df)] = ["TOTAL", np.nan, *df[num].sum()]
         return df
 
 

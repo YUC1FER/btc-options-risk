@@ -64,6 +64,16 @@ def charts(res: dict) -> None:
     ax.set_ylabel("effectiveness"); plt.tight_layout(); plt.savefig(OUT / "hedge_effectiveness.png", dpi=140); plt.close()
 
 
+def fat_tail_caveat(nu: float | None, threshold: float = 4.0) -> str | None:
+    """Limitation sentence when the fitted Student-t is so heavy-tailed that tail estimates are
+    unstable (the t-distribution's variance is infinite at nu <= 2, its 4th moment at nu <= 4)."""
+    if nu is None or nu >= threshold:
+        return None
+    return (f"The fitted Student-t degrees of freedom (nu = {nu:.2f}) imply extremely heavy tails; "
+            "variance is barely finite as nu approaches 2, so Expected Shortfall and Monte Carlo tail "
+            "estimates are unstable and should be read as indicative.")
+
+
 def markdown(res: dict) -> Path:
     m = res["meta"]; g = res["garch"]
     gk = res["greeks"].copy()
@@ -80,7 +90,11 @@ def markdown(res: dict) -> Path:
         "Illustrative short-volatility book with a tail hedge: short ATM straddle, long 25-delta puts, "
         "delta flattened with the future. Greeks in USD (vega per vol point, theta per day).",
         "",
-        _fmt(gk.fillna(0), dec_cols=["delta", "gamma"], usd_cols=["vega", "theta", "value"]),
+        _fmt(gk.fillna(0), dec_cols=["delta"],
+             usd_cols=["cash gamma (USD per 1% move)", "gamma P&L 1% (USD)", "vega", "theta", "value"]),
+        "",
+        "Cash gamma = gamma x F^2 / 100, the change in USD delta for a 1% spot move; "
+        "gamma P&L 1% = 0.5 x gamma x (0.01 x F)^2, the P&L from gamma alone for a 1% move in either direction.",
         "",
         f"Smile fit (iv = a + b k + c k^2, k = ln K/F): a = {m['smile'].a:.3f}, b = {m['smile'].b:.3f}, "
         f"c = {m['smile'].c:.3f}.",
@@ -128,6 +142,7 @@ def markdown(res: dict) -> Path:
         "- Historical simulation assumes the sample contains the relevant tail; it is blind to regimes not in the window.",
         "- Hedge study: daily closes, no transaction costs or slippage, constant implied vol over the option's life, "
         "overlapping windows (observations are autocorrelated, so effective sample size is smaller than the count).",
+        *[f"- {x}" for x in [fat_tail_caveat(g.nu)] if x],
         "- Illustrative portfolio, not a real trading position.",
         "",
         "## 8. Next research steps",

@@ -47,6 +47,17 @@ def gamma(F, K, T, sigma):
     return norm.pdf(d1) / (np.asarray(F) * np.asarray(sigma) * np.sqrt(T))
 
 
+def cash_gamma(F, K, T, sigma):
+    """USD per 1% move: change in USD delta (delta x F) for a +1% spot move = gamma * F^2 / 100.
+    Per-dollar gamma is ~1e-5 for BTC, so this is the readable way to quote it."""
+    return gamma(F, K, T, sigma) * np.asarray(F, dtype=float) ** 2 / 100.0
+
+
+def gamma_pnl_1pct(F, K, T, sigma):
+    """P&L from gamma alone for a 1% spot move: 0.5 * gamma * (0.01 F)^2 (same sign up or down)."""
+    return 0.5 * gamma(F, K, T, sigma) * (0.01 * np.asarray(F, dtype=float)) ** 2
+
+
 def vega(F, K, T, sigma):
     """P&L per +1 vol point (0.01 in sigma)."""
     d1, _ = _d1d2(F, K, T, sigma)

@@ -60,3 +60,38 @@ def test_kupiec_accepts_correct_rate_and_rejects_wrong_rate():
     assert backtest.kupiec(good, 0.01)[1] > 0.05
     assert backtest.kupiec(bad, 0.01)[1] < 0.01
 
+
+def test_cash_gamma_matches_finite_difference_of_usd_delta():
+    """Cash gamma = change in USD delta (delta x F, valued at today's F) for a +1% spot move."""
+    h = 0.001  # +/-0.1% bumps, central difference, rescaled to a 1% move
+    d_up, d_dn = bs.delta(F * (1 + h), K, T, S, 1), bs.delta(F * (1 - h), K, T, S, 1)
+    fd = (d_up - d_dn) * F / (2 * h) * 0.01
+    assert bs.cash_gamma(F, K, T, S) == pytest.approx(fd, rel=1e-4)
+
+
+def test_gamma_pnl_1pct_matches_second_order_revaluation():
+    """Gamma P&L for 1% = 0.5 x gamma x (0.01 F)^2 = the delta-neutral part of a +/-1% revaluation."""
+    up, mid, dn = (bs.price(F * m, K, T, S, 1) for m in (1.01, 1.0, 0.99))
+    assert bs.gamma_pnl_1pct(F, K, T, S) == pytest.approx((up + dn - 2 * mid) / 2, rel=1e-3)
+
+
+SNAPSHOT = Path(__file__).resolve().parents[1] / "docs" / "data_2026-09-30"
+
+
+@pytest.mark.skipif(not SNAPSHOT.exists(), reason="frozen snapshot not present")
+def test_cache_mode_reads_snapshot_exactly():
+    from optrisk import data
+    import pandas as pd
+    spot, dvol, chain, source = data.load("cache", data_dir=SNAPSHOT)
+    assert source == "Deribit snapshot of 2026-09-30 13:07 UTC (cached)"
+    raw = pd.read_csv(SNAPSHOT / "chain.csv", float_precision="round_trip")
+    assert (chain["T"].values == raw["T"].values).all()          # T kept bit-for-bit
+    assert spot.name == "close" and dvol.name == "dvol"
+    assert len(spot) == len(dvol) == 1501
+
+
+def test_fat_tail_caveat_only_when_nu_below_4():
+    from optrisk import report
+    assert "nu = 2.99" in report.fat_tail_caveat(2.99)
+    assert report.fat_tail_caveat(4.5) is None
+    assert report.fat_tail_caveat(None) is None

@@ -130,12 +130,38 @@ def synthetic(days: int = 1500, seed: int = 7):
     return spot, dvol, pd.DataFrame(rows)
 
 
+# ---------------------------------------------------------------------------- cache
+def read_cache(folder: Path):
+    """Read spot.csv, dvol.csv, chain.csv exactly as saved. 'round_trip' float parsing
+    keeps every value (including each option's T) bit-for-bit, so a cached run
+    reproduces the original run exactly."""
+    folder = Path(folder)
+    read = lambda name, **kw: pd.read_csv(folder / name, float_precision="round_trip", **kw)
+    s = read("spot.csv", index_col=0, parse_dates=True).iloc[:, 0].rename("close")
+    v = read("dvol.csv", index_col=0, parse_dates=True).iloc[:, 0].rename("dvol")
+    c = read("chain.csv")
+    c["expiry"] = pd.to_datetime(c["expiry"], utc=True)
+    return s, v, c
+
+
+def snapshot_time(chain: pd.DataFrame) -> pd.Timestamp:
+    """Recover when the chain was pulled: T was saved as (expiry - pull time) in years."""
+    pulled = chain["expiry"] - pd.to_timedelta(chain["T"] * 365 * 86400, unit="s")
+    return pulled.median().round("s")
+
+
 # --------------------------------------------------------------------------- loader
-def load(mode: str = "live", days: int = 1500, seed: int = 7):
-    """Returns (spot, dvol, chain, source_label)."""
+def load(mode: str = "live", days: int = 1500, seed: int = 7, data_dir: Path | None = None):
+    """Returns (spot, dvol, chain, source_label).
+    mode = "live" (Deribit API, falls back to data/), "synthetic" (seeded simulation),
+    or "cache" (read a saved snapshot from data_dir; no network; `days` is ignored so the
+    full saved history is used and results reproduce exactly)."""
     if mode == "synthetic":
         s, v, c = synthetic(days, seed)
         return s, v, c, "SYNTHETIC (seeded simulation - not market data)"
+    if mode == "cache":
+        s, v, c = read_cache(data_dir)
+        return s, v, c, f"Deribit snapshot of {snapshot_time(c):%Y-%m-%d %H:%M} UTC (cached)"
     DATA_DIR.mkdir(exist_ok=True)
     try:
         s, v, c = fetch_spot(days), fetch_dvol(days), fetch_chain()
@@ -144,9 +170,7 @@ def load(mode: str = "live", days: int = 1500, seed: int = 7):
         return s, v, c, f"Deribit public API, pulled {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC"
     except Exception as exc:  # network down: fall back to last cache
         if (DATA_DIR / "spot.csv").exists():
-            s = pd.read_csv(DATA_DIR / "spot.csv", index_col=0, parse_dates=True).iloc[:, 0]
-            v = pd.read_csv(DATA_DIR / "dvol.csv", index_col=0, parse_dates=True).iloc[:, 0]
-            c = pd.read_csv(DATA_DIR / "chain.csv")
+            s, v, c = read_cache(DATA_DIR)
             return s, v, c, f"Deribit cache in data/ (live fetch failed: {exc})"
         raise RuntimeError(f"Live fetch failed and no cache found: {exc}. "
                            "Run with --mode synthetic to test the pipeline offline.") from exc
